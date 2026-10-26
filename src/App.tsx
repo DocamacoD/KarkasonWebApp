@@ -606,119 +606,140 @@ export default function App() {
     }, 700);
   }, []);
 
-  const handleCellClick = useCallback((x: number, y: number) => {
+  const handlePlaceTile = useCallback((x: number, y: number) => {
     if (thinking) return;
+    if (game.phase !== 'place_tile' || game.turn !== 'player') return;
 
-    if (game.phase === 'place_tile' && game.turn === 'player') {
-      const isValid = game.validPositions.some(p => p.x === x && p.y === y);
-      if (!isValid || !game.currentTile) return;
+    const isValid = game.validPositions.some(p => p.x === x && p.y === y);
+    if (!isValid || !game.currentTile) return;
 
-      setGame(prev => {
-        if (!prev.currentTile) return prev;
-        const placed = { ...prev.currentTile, rotation: prev.currentRotation };
-        const newBoard = prev.board.map(r => [...r]);
-        newBoard[y][x] = { tile: placed, x, y };
+    setGame(prev => {
+      if (!prev.currentTile) return prev;
+      const placed = { ...prev.currentTile, rotation: prev.currentRotation };
+      const newBoard = prev.board.map(r => [...r]);
+      newBoard[y][x] = { tile: placed, x, y };
 
-        // Check if can place meeple
-        const edges = getEdges(placed);
-        const canPlace = prev.playerMeeples > 0 && (
-          placed.hasMonastery || edges.some(e => e === 'city') || edges.some(e => e === 'road')
-        );
+      // Check if can place meeple
+      const edges = getEdges(placed);
+      const canPlace = prev.playerMeeples > 0 && (
+        placed.hasMonastery || edges.some(e => e === 'city') || edges.some(e => e === 'road')
+      );
 
-        if (canPlace) {
-          return {
-            ...prev,
-            board: newBoard,
-            phase: 'place_meeple',
-            placedPos: { x, y },
-            message: 'Разместите мипл или пропустите.',
-          };
-        }
-
-        // No meeple, go to computer
-        const totalScore = countCompletedFeatures(newBoard);
-        const halfScore = Math.floor(totalScore / 2);
-        const newPScore = prev.playerScore + (totalScore - halfScore);
-        const newCScore = prev.computerScore + halfScore;
-
-        const next = getNextPlayableTile(newBoard, prev.deck);
-        if (!next) {
-          return {
-            ...prev,
-            board: newBoard,
-            deck: [],
-            currentTile: null,
-            playerScore: newPScore,
-            computerScore: newCScore,
-            phase: 'game_over',
-            message: 'Игра окончена!',
-            turn: 'player',
-          };
-        }
-
-        setTimeout(() => doComputerTurn(newBoard, newPScore, newCScore, prev.meeples, prev.computerMeeples, next.remainingDeck), 400);
-
+      if (canPlace) {
         return {
           ...prev,
           board: newBoard,
-          deck: next.remainingDeck,
-          currentTile: next.tile,
-          currentRotation: next.rotation,
-          validPositions: next.positions,
+          phase: 'place_meeple',
+          placedPos: { x, y },
+          message: 'Выберите тип мипла и кликните на плитку.',
+        };
+      }
+
+      // No meeple, go to computer
+      const totalScore = countCompletedFeatures(newBoard);
+      const halfScore = Math.floor(totalScore / 2);
+      const newPScore = prev.playerScore + (totalScore - halfScore);
+      const newCScore = prev.computerScore + halfScore;
+
+      const next = getNextPlayableTile(newBoard, prev.deck);
+      if (!next) {
+        return {
+          ...prev,
+          board: newBoard,
+          deck: [],
+          currentTile: null,
           playerScore: newPScore,
           computerScore: newCScore,
-          turn: 'computer',
-          phase: 'place_tile',
-          message: 'Компьютер думает...',
-          placedPos: null,
+          phase: 'game_over',
+          message: 'Игра окончена!',
+          turn: 'player',
         };
-      });
-    } else if (game.phase === 'place_meeple' && game.turn === 'player') {
-      if (!game.placedPos || game.placedPos.x !== x || game.placedPos.y !== y) return;
-      if (!game.selectedMeepleType) return;
+      }
 
-      setGame(prev => {
-        const newMeeples = [...prev.meeples, { owner: 'player' as const, x, y, position: prev.selectedMeepleType! }];
-        const totalScore = countCompletedFeatures(prev.board);
-        const halfScore = Math.floor(totalScore / 2);
-        const newPScore = prev.playerScore + (totalScore - halfScore);
-        const newCScore = prev.computerScore + halfScore;
+      setTimeout(() => doComputerTurn(newBoard, newPScore, newCScore, prev.meeples, prev.computerMeeples, next.remainingDeck), 400);
 
-        const next = getNextPlayableTile(prev.board, prev.deck);
-        if (!next) {
-          return {
-            ...prev,
-            meeples: newMeeples,
-            playerMeeples: prev.playerMeeples - 1,
-            playerScore: newPScore,
-            computerScore: newCScore,
-            phase: 'game_over',
-            message: 'Игра окончена!',
-            turn: 'player',
-          };
-        }
+      return {
+        ...prev,
+        board: newBoard,
+        deck: next.remainingDeck,
+        currentTile: next.tile,
+        currentRotation: next.rotation,
+        validPositions: next.positions,
+        playerScore: newPScore,
+        computerScore: newCScore,
+        turn: 'computer',
+        phase: 'place_tile',
+        message: 'Компьютер думает...',
+        placedPos: null,
+      };
+    });
+  }, [game, thinking, doComputerTurn]);
 
-        setTimeout(() => doComputerTurn(prev.board, newPScore, newCScore, newMeeples, prev.computerMeeples, next.remainingDeck), 400);
+  const handlePlaceMeeple = useCallback((x: number, y: number) => {
+    if (thinking) return;
 
+    setGame(prev => {
+      if (prev.phase !== 'place_meeple' || prev.turn !== 'player') return prev;
+      if (!prev.selectedMeepleType) return prev;
+
+      // Check if this tile has the selected structure type
+      const cell = prev.board[y]?.[x];
+      if (!cell) return prev;
+
+      const edges = getEdges(cell.tile);
+      const type = prev.selectedMeepleType;
+
+      let canPlace = false;
+      if (type === 'monastery' && cell.tile.hasMonastery) canPlace = true;
+      if (type === 'city' && edges.some(e => e === 'city')) canPlace = true;
+      if (type === 'road' && edges.some(e => e === 'road')) canPlace = true;
+
+      if (!canPlace) return prev;
+
+      // Check no meeple already on this tile with same type
+      const hasMeeple = prev.meeples.some(m => m.x === x && m.y === y && m.position === type);
+      if (hasMeeple) return prev;
+
+      const newMeeples = [...prev.meeples, { owner: 'player' as const, x, y, position: type }];
+      const totalScore = countCompletedFeatures(prev.board);
+      const halfScore = Math.floor(totalScore / 2);
+      const newPScore = prev.playerScore + (totalScore - halfScore);
+      const newCScore = prev.computerScore + halfScore;
+
+      const next = getNextPlayableTile(prev.board, prev.deck);
+      if (!next) {
         return {
           ...prev,
           meeples: newMeeples,
           playerMeeples: prev.playerMeeples - 1,
-          deck: next.remainingDeck,
-          currentTile: next.tile,
-          currentRotation: next.rotation,
-          validPositions: next.positions,
           playerScore: newPScore,
           computerScore: newCScore,
-          turn: 'computer',
-          phase: 'place_tile',
-          message: 'Компьютер думает...',
-          placedPos: null,
-          selectedMeepleType: null,
+          phase: 'game_over',
+          message: 'Игра окончена!',
+          turn: 'player',
         };
-      });
-    }
-  }, [game, thinking, doComputerTurn]);
+      }
+
+      setTimeout(() => doComputerTurn(prev.board, newPScore, newCScore, newMeeples, prev.computerMeeples, next.remainingDeck), 400);
+
+      return {
+        ...prev,
+        meeples: newMeeples,
+        playerMeeples: prev.playerMeeples - 1,
+        deck: next.remainingDeck,
+        currentTile: next.tile,
+        currentRotation: next.rotation,
+        validPositions: next.positions,
+        playerScore: newPScore,
+        computerScore: newCScore,
+        turn: 'computer',
+        phase: 'place_tile',
+        message: 'Компьютер думает...',
+        placedPos: null,
+        selectedMeepleType: null,
+      };
+    });
+  }, [thinking, doComputerTurn]);
 
   const handleSkipMeeple = useCallback(() => {
     if (game.phase !== 'place_meeple') return;
@@ -891,9 +912,28 @@ export default function App() {
                 const top = (y - minY + 1) * tileSize;
                 const isPlaced = game.placedPos?.x === x && game.placedPos?.y === y;
                 const meeple = game.meeples.find(m => m.x === x && m.y === y);
+                const isMeeplePhase = game.phase === 'place_meeple' && game.turn === 'player';
+                const edges = getEdges(cell.tile);
+                const canMeepleHere = isMeeplePhase && game.selectedMeepleType && !meeple && (
+                  (game.selectedMeepleType === 'monastery' && cell.tile.hasMonastery) ||
+                  (game.selectedMeepleType === 'city' && edges.some(e => e === 'city')) ||
+                  (game.selectedMeepleType === 'road' && edges.some(e => e === 'road'))
+                );
 
                 return (
-                  <div key={`t${x},${y}`} style={{ position: 'absolute', left, top, outline: isPlaced && game.phase === 'place_meeple' ? '2px solid #FFD700' : 'none', zIndex: isPlaced ? 10 : 1 }}>
+                  <div
+                    key={`t${x},${y}`}
+                    onClick={() => isMeeplePhase && canMeepleHere ? handlePlaceMeeple(x, y) : undefined}
+                    style={{
+                      position: 'absolute',
+                      left,
+                      top,
+                      outline: isPlaced && isMeeplePhase ? '2px solid #FFD700' : canMeepleHere ? '2px solid #00FF88' : 'none',
+                      zIndex: isPlaced ? 10 : 1,
+                      cursor: canMeepleHere ? 'pointer' : 'default',
+                      transition: 'outline 0.15s',
+                    }}
+                  >
                     <TileView tile={cell.tile} size={tileSize} />
                     {meeple && (
                       <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', pointerEvents: 'none' }}>
@@ -915,7 +955,7 @@ export default function App() {
               return (
                 <div
                   key={`v${pos.x},${pos.y}`}
-                  onClick={() => handleCellClick(pos.x, pos.y)}
+                  onClick={() => handlePlaceTile(pos.x, pos.y)}
                   style={{
                     position: 'absolute',
                     left,
